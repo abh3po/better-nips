@@ -1,16 +1,34 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import type { LoginTab } from "@formstr/signer/ui";
 import { LoginBar } from "./components/LoginBar";
 import { ScopeTabs } from "./components/ScopeTabs";
 import { NipFeed } from "./components/NipFeed";
+import { NipPage } from "./components/NipPage";
+import { Settings } from "./components/Settings";
+import { LoginModal } from "./components/LoginModal";
+import { Toaster } from "./components/Toaster";
 import { useSigner } from "./hooks/useSigner";
-import { useFollows, useWebOfTrust, type Surface } from "./hooks/useNips";
+import { useFollows, type Surface } from "./hooks/useNips";
+import { useWebOfTrust } from "./hooks/useWebOfTrust";
+import { useUserRelays } from "./hooks/useUserRelays";
+import { nipHref, useHashRoute } from "./hooks/useHashRoute";
 
 export default function App() {
-  const { pubkey } = useSigner();
+  const { pubkey, locked, method } = useSigner();
+  const { route, navigate } = useHashRoute();
   const [surface, setSurface] = useState<Surface>("following");
+  const [login, setLogin] = useState<{ open: boolean; tab?: LoginTab }>({
+    open: false,
+  });
 
   const follows = useFollows(pubkey);
-  const webOfTrust = useWebOfTrust(follows);
+  const wot = useWebOfTrust(pubkey, follows);
+  const userRelays = useUserRelays(pubkey);
+
+  const openLogin = useCallback((tab?: LoginTab) => {
+    setLogin({ open: true, tab });
+  }, []);
+  const closeLogin = useCallback(() => setLogin({ open: false }), []);
 
   // Trust-scoped surfaces need a logged-in user with follows.
   const disabled = useMemo(() => {
@@ -27,20 +45,71 @@ export default function App() {
 
   return (
     <div className="app">
-      <LoginBar />
+      <LoginBar
+        onOpenLogin={() => openLogin()}
+        onNavigateHome={() => navigate("#/")}
+        onNavigateSettings={() => navigate("#/settings")}
+      />
+
+      {locked && (
+        <div className="lock-banner">
+          <span>
+            Your {method === "ncryptsec" ? "encrypted key" : "session"} is
+            locked — re-authenticate to approve NIPs.
+          </span>
+          <button
+            className="btn sm"
+            onClick={() =>
+              openLogin(method === "ncryptsec" ? "ncryptsec" : undefined)
+            }
+          >
+            Unlock
+          </button>
+        </div>
+      )}
+
       <main className="content">
-        <ScopeTabs
-          surface={effective}
-          onChange={setSurface}
-          disabled={disabled}
-        />
-        <NipFeed
-          surface={effective}
-          pubkey={pubkey}
-          follows={follows}
-          webOfTrust={webOfTrust}
-        />
+        {route.name === "nip" ? (
+          <NipPage
+            id={route.id}
+            follows={follows}
+            webOfTrust={wot.set}
+            onNeedsAuth={() => openLogin()}
+            onBack={() => navigate("#/")}
+          />
+        ) : route.name === "settings" ? (
+          <Settings
+            pubkey={pubkey}
+            wot={wot}
+            userRelays={userRelays}
+            onOpenLogin={() => openLogin()}
+            onBack={() => navigate("#/")}
+          />
+        ) : (
+          <>
+            <ScopeTabs
+              surface={effective}
+              onChange={setSurface}
+              disabled={disabled}
+            />
+            <NipFeed
+              surface={effective}
+              pubkey={pubkey}
+              follows={follows}
+              webOfTrust={wot.set}
+              onOpenNip={(id) => navigate(nipHref(id))}
+              onNeedsAuth={() => openLogin()}
+            />
+          </>
+        )}
       </main>
+
+      <LoginModal
+        open={login.open}
+        initialTab={login.tab}
+        onClose={closeLogin}
+      />
+      <Toaster />
     </div>
   );
 }

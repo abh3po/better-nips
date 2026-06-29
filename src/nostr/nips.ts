@@ -1,5 +1,6 @@
 import type { Event } from "nostr-tools";
-import { KIND_NIP } from "./constants";
+import { naddrEncode } from "nostr-tools/nip19";
+import { KIND_NIP, RELAYS } from "./constants";
 
 export interface NipKind {
   kind: string;
@@ -28,6 +29,20 @@ function tagValue(e: Event, name: string): string | undefined {
 /** Build the `a` coordinate for an addressable event. */
 export function addressOf(e: Event): string {
   return `${e.kind}:${e.pubkey}:${tagValue(e, "d") ?? ""}`;
+}
+
+/** Shareable naddr (NIP-19) for a parsed NIP — the id in its screen's URL. */
+export function naddrOf(nip: { pubkey: string; d: string }): string {
+  try {
+    return naddrEncode({
+      identifier: nip.d,
+      pubkey: nip.pubkey,
+      kind: KIND_NIP,
+      relays: RELAYS.slice(0, 2),
+    });
+  } catch {
+    return `${KIND_NIP}:${nip.pubkey}:${nip.d}`;
+  }
 }
 
 /** Parse a kind-30817 event into a Nip, or null if it isn't one. */

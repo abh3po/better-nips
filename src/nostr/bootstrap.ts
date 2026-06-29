@@ -5,12 +5,25 @@ import {
   setDataLayer,
 } from "@formstr/local-relay";
 import { createSigner } from "@formstr/signer";
+import { SimplePool } from "nostr-tools/pool";
 import type { EventTemplate, Event } from "nostr-tools";
-import { RELAYS, SEARCH_RELAYS } from "./constants";
+import { APP_NAME, APP_URL, SEARCH_RELAYS } from "./constants";
+import { loadRelays } from "./relays";
 
 // One signer for the whole app. Handles NIP-07 / NIP-46 / NIP-49 / NIP-55 and
-// persists the active account across reloads (re-hydrated as locked).
-export const signer = createSigner();
+// persists the active account across reloads (re-hydrated as locked). The app
+// metadata is shown to remote signers (Amber, etc.) on the consent screen.
+export const signer = createSigner({
+  appName: APP_NAME,
+  appUrl: APP_URL,
+});
+
+// A shared relay pool, reused for NIP-46 silent unlock on cold start so the
+// bunker session is re-attached without re-prompting the user.
+export const pool = new SimplePool();
+
+// The user's effective relay list (persisted override or defaults).
+const userRelays = loadRelays();
 
 // Spawn the ready-made local-relay worker. It owns every connection decision;
 // the app only declares interests (observe) and publishes.
@@ -20,7 +33,7 @@ const worker = new Worker(
 );
 
 const client = new LocalRelayClient(workerChannel(worker));
-client.setUserRelays(RELAYS);
+client.setUserRelays([...userRelays, "relay.ditto.pub"]);
 
 // The data layer signs through whichever account is currently unlocked. The
 // callback resolves the active signer lazily, so publishing before login throws
@@ -34,8 +47,24 @@ export const dataLayer = new DataLayer({
   },
 });
 
-dataLayer.setUserRelays(RELAYS);
+dataLayer.setUserRelays([...userRelays, "relay.ditto.pub"]);
 dataLayer.setSearchRelays(SEARCH_RELAYS);
 
 // Install the process-wide singleton (lets `getDataLayer()` work anywhere).
 setDataLayer(dataLayer);
+
+/**
+ * Re-attach the previously-active account from storage without prompting the
+ * user — extension/NIP-46/Android all reconstruct silently. Returns the
+ * unlocked signer, or `null` when there's nothing to unlock or the method needs
+ * an explicit secret (ncryptsec → caller must prompt for the passphrase).
+ */
+export async function silentUnlock() {
+  const account = signer.getActiveAccount();
+  if (!account) return null;
+  try {
+    return await signer.unlock({ pool });
+  } catch {
+    return null;
+  }
+}

@@ -8,6 +8,8 @@ export const KIND_APPROVAL = 1985;
 export const KIND_CONTACTS = 3;
 /** NIP-01 profile metadata. */
 export const KIND_PROFILE = 0;
+/** NIP-65 relay list metadata — the user's own read/write relays. */
+export const KIND_RELAY_LIST = 10002;
 
 /** NIP-32 label namespace ("L") used by NostrHub approvals. */
 export const LABEL_NAMESPACE = "nostrhub";
@@ -17,6 +19,14 @@ export const LABEL_APPROVE = "approve";
 /** Provenance tag we stamp on events we publish. */
 export const CLIENT_NAME = "better-nips";
 
+/** Display wordmark. A community effort — not a company. */
+export const APP_NAME = "NIP Commons";
+/** One-line description shown under the wordmark. */
+export const APP_TAGLINE = "Community NIPs, surfaced by trust";
+/** App URL — surfaced to remote signers on the NIP-46 consent screen. */
+export const APP_URL = "https://github.com/formstr-hq/better-nips";
+
+/** Relays we read from / publish to by default (user-overridable in Settings). */
 export const RELAYS = [
   "wss://relay.damus.io",
   "wss://nos.lol",
@@ -26,7 +36,9 @@ export const RELAYS = [
 
 export const SEARCH_RELAYS = ["wss://relay.nostr.band"];
 
-/** Cap the web-of-trust author set so upstream filters stay sane. */
-export const WOT_MAX_AUTHORS = 500;
-/** Cap how many of the user's follows we fan out for 2nd-degree discovery. */
-export const WOT_SEED_LIMIT = 300;
+// No cap on the web-of-trust set: every direct follow and every discovered
+// 2nd-degree account is included. `local-relay`'s SyncEngine outbox-partitions
+// the author set across relays (each author → only the relays they write to),
+// so even a large trust graph is split per relay rather than sent wholesale.
+// The whole point of this client is a social-graph surface, not a curated
+// canon — so we don't trim it.

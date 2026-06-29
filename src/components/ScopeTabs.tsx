@@ -16,14 +16,16 @@ export function ScopeTabs({
   disabled?: Set<Surface>;
 }) {
   return (
-    <nav className="tabs">
+    <nav className="tabs" role="tablist">
       {TABS.map((t) => {
         const isDisabled = disabled?.has(t.id);
         return (
           <button
             key={t.id}
+            role="tab"
+            aria-selected={surface === t.id}
             className={`tab${surface === t.id ? " active" : ""}`}
-            title={t.hint}
+            title={isDisabled ? "Connect a signer to use this surface" : t.hint}
             disabled={isDisabled}
             onClick={() => onChange(t.id)}
           >
