@@ -3,12 +3,14 @@ import { useEffect, useState } from "react";
 export type Route =
   | { name: "feed" }
   | { name: "settings" }
+  | { name: "new" }
   | { name: "nip"; id: string };
 
 function parse(hash: string): Route {
   // Strip leading "#" and an optional leading "/".
   const path = hash.replace(/^#\/?/, "");
   if (path === "settings") return { name: "settings" };
+  if (path === "new") return { name: "new" };
   const nip = path.match(/^nip\/(.+)$/);
   if (nip) return { name: "nip", id: decodeURIComponent(nip[1]) };
   return { name: "feed" };

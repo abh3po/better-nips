@@ -1,5 +1,6 @@
 import { npubEncode } from "nostr-tools/nip19";
 import type { ScoredNip, Profile } from "../hooks/useNips";
+import { ProfileLink } from "./ProfileLink";
 
 function authorLabel(pubkey: string, profile?: Profile): string {
   if (profile?.name) return profile.name;
@@ -15,25 +16,57 @@ export interface ApproverRef {
   profile?: Profile;
 }
 
+function AvatarStack({ refs }: { refs: ApproverRef[] }) {
+  return (
+    <span className="avatar-stack">
+      {refs.slice(0, 4).map((a) => (
+        <ProfileLink
+          key={a.pubkey}
+          pubkey={a.pubkey}
+          title={authorLabel(a.pubkey, a.profile)}
+        >
+          {a.profile?.picture ? (
+            <img className="avatar xs" src={a.profile.picture} alt="" />
+          ) : (
+            <span className="avatar xs placeholder" />
+          )}
+        </ProfileLink>
+      ))}
+    </span>
+  );
+}
+
 export function NipCard({
   nip,
   profile,
   approvalCount,
+  disapprovalCount,
   networkApprovers,
+  networkDisapprovers,
   approved,
+  disapproved,
   pending,
   onApprove,
+  onDisapprove,
+  onRetract,
   onOpen,
 }: {
   nip: ScoredNip;
   profile?: Profile;
   approvalCount: number;
+  disapprovalCount: number;
   networkApprovers: ApproverRef[];
+  networkDisapprovers: ApproverRef[];
   approved: boolean;
+  disapproved: boolean;
   pending: boolean;
   onApprove: () => void;
+  onDisapprove: () => void;
+  onRetract: () => void;
   onOpen: () => void;
 }) {
+  const hasVerdicts =
+    networkApprovers.length > 0 || networkDisapprovers.length > 0;
   return (
     <article
       className="card"
@@ -48,52 +81,81 @@ export function NipCard({
       }}
     >
       <div className="card-head">
-        <div className="author">
+        <ProfileLink
+          pubkey={nip.pubkey}
+          className="author"
+          title={authorLabel(nip.pubkey, profile)}
+        >
           {profile?.picture ? (
             <img className="avatar" src={profile.picture} alt="" />
           ) : (
             <div className="avatar placeholder" />
           )}
           <span>{authorLabel(nip.pubkey, profile)}</span>
+        </ProfileLink>
+        <div className="verdict-buttons">
+          <button
+            className={`btn approve${approved ? " done" : ""}`}
+            disabled={pending}
+            onClick={(e) => {
+              e.stopPropagation();
+              approved ? onRetract() : onApprove();
+            }}
+            title={
+              approved ? "Click to retract your approval" : "Publish a NIP-32 approval"
+            }
+          >
+            {pending ? "…" : approved ? "✓" : "Approve"}
+            <span className="count">{approvalCount}</span>
+          </button>
+          <button
+            className={`btn disapprove icon-only${disapproved ? " done" : ""}`}
+            disabled={pending}
+            onClick={(e) => {
+              e.stopPropagation();
+              disapproved ? onRetract() : onDisapprove();
+            }}
+            title={
+              disapproved
+                ? "Click to retract your disapproval"
+                : "Publish a NIP-32 disapproval"
+            }
+          >
+            {disapproved ? "✓" : "👎"}
+            {disapprovalCount > 0 && <span className="count">{disapprovalCount}</span>}
+          </button>
         </div>
-        <button
-          className={`btn approve${approved ? " done" : ""}`}
-          disabled={approved || pending}
-          onClick={(e) => {
-            e.stopPropagation();
-            onApprove();
-          }}
-          title="Publish a NIP-32 approval"
-        >
-          {approved ? "✓ Approved" : pending ? "…" : "Approve"}
-          <span className="count">{approvalCount}</span>
-        </button>
       </div>
+
+      {hasVerdicts && (
+        <div className="approver-row">
+          {networkApprovers.length > 0 && (
+            <span
+              className="verdict-chip approve"
+              title="Approvers in your network"
+            >
+              <AvatarStack refs={networkApprovers} />
+              <span className="approver-text">
+                {approverSummary(networkApprovers)}
+              </span>
+            </span>
+          )}
+          {networkDisapprovers.length > 0 && (
+            <span
+              className="verdict-chip disapprove"
+              title="Disapprovers in your network"
+            >
+              <AvatarStack refs={networkDisapprovers} />
+              <span className="disapprover-text">
+                {networkDisapprovers.length} disapproved
+              </span>
+            </span>
+          )}
+        </div>
+      )}
 
       <h2 className="card-title">{nip.title}</h2>
       {nip.summary && <p className="card-summary">{nip.summary}</p>}
-
-      {networkApprovers.length > 0 && (
-        <div className="approver-row" title="Approvers in your network">
-          <span className="avatar-stack">
-            {networkApprovers.slice(0, 4).map((a) =>
-              a.profile?.picture ? (
-                <img
-                  key={a.pubkey}
-                  className="avatar xs"
-                  src={a.profile.picture}
-                  alt=""
-                />
-              ) : (
-                <span key={a.pubkey} className="avatar xs placeholder" />
-              ),
-            )}
-          </span>
-          <span className="approver-text">
-            {approverSummary(networkApprovers)}
-          </span>
-        </div>
-      )}
 
       <div className="card-foot">
         {nip.kinds.length > 0 ? (

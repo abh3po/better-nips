@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { npubEncode } from "nostr-tools/nip19";
 import type { Profile } from "../hooks/useNips";
+import { ProfileLink } from "./ProfileLink";
 
 function label(pubkey: string, profile?: Profile): string {
   if (profile?.name) return profile.name;
@@ -38,12 +39,15 @@ export function ApproverList({
   follows,
   webOfTrust,
   me,
+  title,
 }: {
   approvers: string[];
   profiles: Map<string, Profile>;
   follows: string[];
   webOfTrust: Set<string>;
   me: string;
+  /** Override the default "Approved by N people" heading. */
+  title?: string;
 }) {
   const followSet = useMemo(() => new Set(follows), [follows]);
 
@@ -72,20 +76,24 @@ export function ApproverList({
   return (
     <section className="approvers">
       <h2 className="subsection-title">
-        Approved by {approvers.length}
-        {approvers.length === 1 ? " person" : " people"}
+        {title ??
+          `Approved by ${approvers.length} ${
+            approvers.length === 1 ? "person" : "people"
+          }`}
       </h2>
       <ul className="approver-grid">
         {sorted.map(({ pk, tier }) => {
           const p = profiles.get(pk);
           return (
             <li key={pk} className="approver-item">
-              {p?.picture ? (
-                <img className="avatar sm" src={p.picture} alt="" />
-              ) : (
-                <span className="avatar sm placeholder" />
-              )}
-              <span className="approver-name">{label(pk, p)}</span>
+              <ProfileLink pubkey={pk} className="approver-link">
+                {p?.picture ? (
+                  <img className="avatar sm" src={p.picture} alt="" />
+                ) : (
+                  <span className="avatar sm placeholder" />
+                )}
+                <span className="approver-name">{label(pk, p)}</span>
+              </ProfileLink>
               {TIER_LABEL[tier] && (
                 <span className={`tier-tag ${tier}`}>{TIER_LABEL[tier]}</span>
               )}

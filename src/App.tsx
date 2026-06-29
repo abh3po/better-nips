@@ -4,6 +4,7 @@ import { LoginBar } from "./components/LoginBar";
 import { ScopeTabs } from "./components/ScopeTabs";
 import { NipFeed } from "./components/NipFeed";
 import { NipPage } from "./components/NipPage";
+import { ComposeNip } from "./components/ComposeNip";
 import { Settings } from "./components/Settings";
 import { LoginModal } from "./components/LoginModal";
 import { Toaster } from "./components/Toaster";
@@ -85,13 +86,25 @@ export default function App() {
             onOpenLogin={() => openLogin()}
             onBack={() => navigate("#/")}
           />
+        ) : route.name === "new" ? (
+          <ComposeNip
+            loggedIn={!!pubkey}
+            onNeedsAuth={() => openLogin()}
+            onBack={() => navigate("#/")}
+            onPublished={(naddr) => navigate(nipHref(naddr))}
+          />
         ) : (
           <>
-            <ScopeTabs
-              surface={effective}
-              onChange={setSurface}
-              disabled={disabled}
-            />
+            <div className="feed-head">
+              <ScopeTabs
+                surface={effective}
+                onChange={setSurface}
+                disabled={disabled}
+              />
+              <button className="btn new-nip" onClick={() => navigate("#/new")}>
+                + New NIP
+              </button>
+            </div>
             <NipFeed
               surface={effective}
               pubkey={pubkey}

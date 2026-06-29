@@ -10,6 +10,7 @@ import {
   KIND_NIP,
   KIND_PROFILE,
   LABEL_APPROVE,
+  LABEL_DISAPPROVE,
   LABEL_NAMESPACE,
 } from "../nostr/constants";
 import { parseFollows } from "../nostr/wot";
@@ -54,6 +55,10 @@ export interface Profile {
   picture?: string;
   about?: string;
   nip05?: string;
+  /** NIP-57 lightning address (lud16) — what zaps are routed to. */
+  lud16?: string;
+  /** NIP-57 LNURL-pay (lud06) — fallback when there's no lud16. */
+  lud06?: string;
 }
 
 function parseProfile(content: string): Profile | null {
@@ -64,6 +69,8 @@ function parseProfile(content: string): Profile | null {
       picture: meta.picture,
       about: meta.about,
       nip05: meta.nip05,
+      lud16: meta.lud16,
+      lud06: meta.lud06,
     };
   } catch {
     return null;
@@ -102,6 +109,10 @@ export interface ScoredNip extends Nip {
   approvers: Set<string>;
   /** Approvers who are in your follows or web of trust (the trusted subset). */
   networkApprovers: Set<string>;
+  /** Every distinct disapprover pubkey (NIP-32 "disapprove" labels). */
+  disapprovers: Set<string>;
+  /** Disapprovers who are in your follows or web of trust. */
+  networkDisapprovers: Set<string>;
   /** Trust-weighted score: follow = 3, web-of-trust = 2, anyone else = 1. */
   score: number;
 }
@@ -248,20 +259,33 @@ export function useNipFeed(
   const { events: addrApprovals } = useObserve(addrApprovalFilters);
 
   const nips = useMemo(() => {
-    // address -> all approver pubkeys (merged from both approval queries).
-    const byAddress = new Map<string, Set<string>>();
+    // address -> { approvers, disapprovers } (merged from both label queries).
+    const byAddress = new Map<
+      string,
+      { approvers: Set<string>; disapprovers: Set<string> }
+    >();
     for (const e of [...globalApprovals, ...addrApprovals]) {
-      if (!e.tags.some((t) => t[0] === "l" && t[1] === LABEL_APPROVE)) continue;
+      const isApprove = e.tags.some((t) => t[0] === "l" && t[1] === LABEL_APPROVE);
+      const isDisapprove = e.tags.some(
+        (t) => t[0] === "l" && t[1] === LABEL_DISAPPROVE,
+      );
+      if (!isApprove && !isDisapprove) continue;
       const addr = approvalTarget(e);
       if (!addr) continue;
-      if (!byAddress.has(addr)) byAddress.set(addr, new Set());
-      byAddress.get(addr)!.add(e.pubkey);
+      if (!byAddress.has(addr)) {
+        byAddress.set(addr, { approvers: new Set(), disapprovers: new Set() });
+      }
+      const bucket = byAddress.get(addr)!;
+      (isApprove ? bucket.approvers : bucket.disapprovers).add(e.pubkey);
     }
 
     const scored: ScoredNip[] = [];
     for (const nip of parsed) {
-      const approvers = byAddress.get(nip.address) ?? new Set<string>();
+      const bucket = byAddress.get(nip.address);
+      const approvers = bucket?.approvers ?? new Set<string>();
+      const disapprovers = bucket?.disapprovers ?? new Set<string>();
       const networkApprovers = new Set<string>();
+      const networkDisapprovers = new Set<string>();
       let hasFollowApprover = false;
       let score = 0;
       for (const a of approvers) {
@@ -269,6 +293,9 @@ export function useNipFeed(
         score += weight;
         if (weight > 1) networkApprovers.add(a);
         if (followSet.has(a)) hasFollowApprover = true;
+      }
+      for (const d of disapprovers) {
+        if (followSet.has(d) || webOfTrust.has(d)) networkDisapprovers.add(d);
       }
 
       // Surface membership: authored OR approved by your network.
@@ -278,7 +305,14 @@ export function useNipFeed(
         if (!webOfTrust.has(nip.pubkey) && networkApprovers.size === 0) continue;
       }
 
-      scored.push({ ...nip, approvers, networkApprovers, score });
+      scored.push({
+        ...nip,
+        approvers,
+        networkApprovers,
+        disapprovers,
+        networkDisapprovers,
+        score,
+      });
     }
 
     scored.sort((a, b) => b.score - a.score || b.createdAt - a.createdAt);

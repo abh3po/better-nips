@@ -10,21 +10,36 @@ export const KIND_CONTACTS = 3;
 export const KIND_PROFILE = 0;
 /** NIP-65 relay list metadata — the user's own read/write relays. */
 export const KIND_RELAY_LIST = 10002;
+/** NIP-25 reaction ("like" / emoji). */
+export const KIND_REACTION = 7;
+/** NIP-22 comment — used for threaded discussion on a NIP (addressable root). */
+export const KIND_COMMENT = 1111;
+/** NIP-09 deletion request — used to retract a reaction. */
+export const KIND_DELETE = 5;
+/** NIP-57 zap request (signed, sent to the LNURL callback — never published). */
+export const KIND_ZAP_REQUEST = 9734;
+/** NIP-57 zap receipt (published by the recipient's LNURL server on payment). */
+export const KIND_ZAP_RECEIPT = 9735;
 
 /** NIP-32 label namespace ("L") used by NostrHub approvals. */
 export const LABEL_NAMESPACE = "nostrhub";
 /** NIP-32 label value ("l") for an approval. */
 export const LABEL_APPROVE = "approve";
+/** NIP-32 label value ("l") for a disapproval — a public objection to a NIP. */
+export const LABEL_DISAPPROVE = "disapprove";
 
 /** Provenance tag we stamp on events we publish. */
 export const CLIENT_NAME = "better-nips";
 
-/** Display wordmark. A community effort — not a company. */
-export const APP_NAME = "NIP Commons";
+/** Display wordmark — the NIPs surface of the pollerama family. */
+export const APP_NAME = "NIPs by Pollerama";
 /** One-line description shown under the wordmark. */
 export const APP_TAGLINE = "Community NIPs, surfaced by trust";
 /** App URL — surfaced to remote signers on the NIP-46 consent screen. */
 export const APP_URL = "https://github.com/formstr-hq/better-nips";
+
+/** Sister app (pollerama) — where author/approver profiles are deep-linked. */
+export const POLLERAMA_URL = "https://pollerama.fun";
 
 /** Relays we read from / publish to by default (user-overridable in Settings). */
 export const RELAYS = [

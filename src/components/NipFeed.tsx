@@ -61,7 +61,8 @@ export function NipFeed({
   onNeedsAuth: () => void;
 }) {
   const { nips, ready } = useNipFeed(surface, follows, webOfTrust);
-  const { approve, approved, pending } = useApprove(onNeedsAuth);
+  const { approve, disapprove, retract, approved, disapproved, pending } =
+    useApprove(onNeedsAuth);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("top");
   const [approvedOnly, setApprovedOnly] = useState(false);
@@ -96,25 +97,34 @@ export function NipFeed({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nips, query, sort, approvedOnly, approvedBy, target, followSet, pubkey]);
 
-  // Profiles for NIP authors plus the trusted approvers we surface on cards.
+  // Profiles for NIP authors plus the trusted approvers/disapprovers on cards.
   const profileTargets = useMemo(() => {
     const set = new Set<string>();
     for (const n of filtered) {
       set.add(n.pubkey);
       for (const a of n.networkApprovers) set.add(a);
+      for (const d of n.networkDisapprovers) set.add(d);
     }
     return [...set];
   }, [filtered]);
   const profiles = useProfiles(profileTargets);
 
+  // Self-verdict is the source of truth (observed labels + optimistic actions);
+  // counts reconcile it against the global tally the same way the NIP page does.
+  const isApprovedFor = (nip: ScoredNip) => approved.has(nip.address);
+  const isDisapprovedFor = (nip: ScoredNip) => disapproved.has(nip.address);
   const countFor = (nip: ScoredNip) => {
-    const isLocal = approved.has(nip.address);
+    const self = approved.has(nip.address);
+    const observed = nip.approvers.has(pubkey ?? "");
+    return nip.approvers.size + (self && !observed ? 1 : 0) - (!self && observed ? 1 : 0);
+  };
+  const disapprovalCountFor = (nip: ScoredNip) => {
+    const self = disapproved.has(nip.address);
+    const observed = nip.disapprovers.has(pubkey ?? "");
     return (
-      nip.approvers.size + (isLocal && !nip.approvers.has(pubkey ?? "") ? 1 : 0)
+      nip.disapprovers.size + (self && !observed ? 1 : 0) - (!self && observed ? 1 : 0)
     );
   };
-  const isApprovedFor = (nip: ScoredNip) =>
-    approved.has(nip.address) || nip.approvers.has(pubkey ?? "");
 
   if (surface !== "global" && !pubkey) {
     return (
@@ -218,11 +228,21 @@ export function NipFeed({
               nip={nip}
               profile={profiles.get(nip.pubkey)}
               approvalCount={countFor(nip)}
-              networkApprovers={[...nip.networkApprovers]
-                .map((pk) => ({ pubkey: pk, profile: profiles.get(pk) }))}
+              disapprovalCount={disapprovalCountFor(nip)}
+              networkApprovers={[...nip.networkApprovers].map((pk) => ({
+                pubkey: pk,
+                profile: profiles.get(pk),
+              }))}
+              networkDisapprovers={[...nip.networkDisapprovers].map((pk) => ({
+                pubkey: pk,
+                profile: profiles.get(pk),
+              }))}
               approved={isApprovedFor(nip)}
+              disapproved={isDisapprovedFor(nip)}
               pending={pending.has(nip.address)}
               onApprove={() => void approve(nip)}
+              onDisapprove={() => void disapprove(nip)}
+              onRetract={() => void retract(nip)}
               onOpen={() => onOpenNip(naddrOf(nip))}
             />
           ))}

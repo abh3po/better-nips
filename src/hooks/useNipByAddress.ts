@@ -7,6 +7,7 @@ import {
   KIND_APPROVAL,
   KIND_NIP,
   LABEL_APPROVE,
+  LABEL_DISAPPROVE,
   LABEL_NAMESPACE,
 } from "../nostr/constants";
 import { approvalTarget, parseNip, type Nip } from "../nostr/nips";
@@ -15,6 +16,8 @@ export interface LoadedNip {
   nip: Nip | null;
   /** Distinct approver pubkeys across the network (works logged-out). */
   approvers: Set<string>;
+  /** Distinct disapprover pubkeys across the network (NIP-32 "disapprove"). */
+  disapprovers: Set<string>;
   /** True once the NIP query has reached EOSE (so "not found" is meaningful). */
   ready: boolean;
 }
@@ -107,16 +110,19 @@ export function useNipByAddress(
     [nipEvents],
   );
 
-  const approvers = useMemo(() => {
-    const set = new Set<string>();
+  const { approvers, disapprovers } = useMemo(() => {
+    const approvers = new Set<string>();
+    const disapprovers = new Set<string>();
     for (const e of [...addrApprovals, ...networkApprovals]) {
-      const isApprove = e.tags.some(
-        (t) => t[0] === "l" && t[1] === LABEL_APPROVE,
-      );
-      if (isApprove && approvalTarget(e) === address) set.add(e.pubkey);
+      if (approvalTarget(e) !== address) continue;
+      if (e.tags.some((t) => t[0] === "l" && t[1] === LABEL_APPROVE)) {
+        approvers.add(e.pubkey);
+      } else if (e.tags.some((t) => t[0] === "l" && t[1] === LABEL_DISAPPROVE)) {
+        disapprovers.add(e.pubkey);
+      }
     }
-    return set;
+    return { approvers, disapprovers };
   }, [addrApprovals, networkApprovals, address]);
 
-  return { nip, approvers, ready: eose, coord };
+  return { nip, approvers, disapprovers, ready: eose, coord };
 }

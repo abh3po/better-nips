@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 
 /**
  * A deliberately small Markdown renderer that returns React nodes (never raw
@@ -60,6 +60,55 @@ function renderBlocks(src: string): ReactNode[] {
         </Tag>,
       );
       i++;
+      continue;
+    }
+
+    // GFM table: a header row of `|`-separated cells, then a delimiter row
+    // (`| --- | :--: |`), then body rows until a blank line.
+    const nextLine = lines[i + 1];
+    if (
+      line.includes("|") &&
+      nextLine !== undefined &&
+      /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(nextLine)
+    ) {
+      const headers = parseTableRow(line);
+      const aligns = parseTableRow(nextLine).map((c) => {
+        const left = c.startsWith(":");
+        const right = c.endsWith(":");
+        return left && right ? "center" : right ? "right" : left ? "left" : undefined;
+      });
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].trim() !== "" && lines[i].includes("|")) {
+        rows.push(parseTableRow(lines[i]));
+        i++;
+      }
+      out.push(
+        <div className="md-table-wrap" key={k()}>
+          <table className="md-table">
+            <thead>
+              <tr>
+                {headers.map((h, c) => (
+                  <th key={c} style={alignStyle(aligns[c])}>
+                    {renderInline(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, r) => (
+                <tr key={r}>
+                  {headers.map((_, c) => (
+                    <td key={c} style={alignStyle(aligns[c])}>
+                      {renderInline(row[c] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
       continue;
     }
 
@@ -139,6 +188,18 @@ function renderBlocks(src: string): ReactNode[] {
   }
 
   return out;
+}
+
+/** Split a table row into trimmed cells, tolerating optional edge pipes. */
+function parseTableRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map((c) => c.trim());
+}
+
+function alignStyle(align?: string): CSSProperties | undefined {
+  return align ? { textAlign: align as "left" | "right" | "center" } : undefined;
 }
 
 // Inline: code spans first (so their content isn't re-parsed), then links,

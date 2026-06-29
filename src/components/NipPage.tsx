@@ -4,9 +4,12 @@ import { useNipByAddress } from "../hooks/useNipByAddress";
 import { useProfile, useProfiles } from "../hooks/useNips";
 import { useApprove } from "../hooks/useApprove";
 import { signer } from "../nostr/bootstrap";
+import { APP_NAME, APP_TAGLINE } from "../nostr/constants";
 import { Markdown } from "../lib/markdown";
 import { toast } from "../lib/toast";
-import { ApproverList } from "./ApproverList";
+import { ApproverStack } from "./ApproverStack";
+import { FeedbackBar } from "./FeedbackBar";
+import { ProfileLink } from "./ProfileLink";
 
 function authorLabel(pubkey: string, name?: string): string {
   if (name) return name;
@@ -48,30 +51,55 @@ export function NipPage({
     () => [...new Set([...follows, ...webOfTrust])],
     [follows, webOfTrust],
   );
-  const { nip, approvers, ready, coord } = useNipByAddress(id, networkAuthors);
+  const { nip, approvers, disapprovers, ready, coord } = useNipByAddress(
+    id,
+    networkAuthors,
+  );
   const profile = useProfile(nip?.pubkey ?? null);
-  const { approve, approved, pending } = useApprove(onNeedsAuth);
-  const approverProfiles = useProfiles(useMemo(() => [...approvers], [approvers]));
+  const { approve, disapprove, retract, approved, disapproved, pending } =
+    useApprove(onNeedsAuth);
+  const verdictProfiles = useProfiles(
+    useMemo(() => [...approvers, ...disapprovers], [approvers, disapprovers]),
+  );
 
   useEffect(() => {
-    document.title = nip ? `${nip.title} — NIP Commons` : "NIP Commons";
+    document.title = nip ? `${nip.title} — ${APP_NAME}` : APP_NAME;
     return () => {
-      document.title = "NIP Commons — community NIPs, surfaced by trust";
+      document.title = `${APP_NAME} — ${APP_TAGLINE.toLowerCase()}`;
     };
   }, [nip]);
 
   const me = signer.getActiveAccount()?.pubkey ?? "";
-  const locallyApproved = nip ? approved.has(nip.address) : false;
-  const isApproved = locallyApproved || (!!nip && approvers.has(me));
+  const isApproved = nip ? approved.has(nip.address) : false;
+  const isDisapproved = nip ? disapproved.has(nip.address) : false;
+  const meApproved = !!nip && approvers.has(me);
+  const meDisapproved = !!nip && disapprovers.has(me);
+  // Global counts reconciled with the optimistic self-verdict: add when we've
+  // just voted but the label isn't observed yet, subtract when we've retracted
+  // or switched away but the prior label is still observed.
   const count =
     approvers.size +
-    (locallyApproved && nip && !approvers.has(me) ? 1 : 0);
-  // Approver pubkeys for the list, folding in an optimistic self-approval.
+    (isApproved && !meApproved ? 1 : 0) -
+    (!isApproved && meApproved ? 1 : 0);
+  const disapprovalCount =
+    disapprovers.size +
+    (isDisapproved && !meDisapproved ? 1 : 0) -
+    (!isDisapproved && meDisapproved ? 1 : 0);
+  // Verdict pubkeys for the stack, folding the optimistic self-verdict in/out.
   const approverPubkeys = useMemo(() => {
-    const list = [...approvers];
-    if (locallyApproved && me && !approvers.has(me)) list.unshift(me);
+    let list = [...approvers];
+    if (isApproved && me && !approvers.has(me)) list.unshift(me);
+    if (!isApproved && me && approvers.has(me))
+      list = list.filter((pk) => pk !== me);
     return list;
-  }, [approvers, locallyApproved, me]);
+  }, [approvers, isApproved, me]);
+  const disapproverPubkeys = useMemo(() => {
+    let list = [...disapprovers];
+    if (isDisapproved && me && !disapprovers.has(me)) list.unshift(me);
+    if (!isDisapproved && me && disapprovers.has(me))
+      list = list.filter((pk) => pk !== me);
+    return list;
+  }, [disapprovers, isDisapproved, me]);
 
   if (!coord) {
     return (
@@ -129,7 +157,11 @@ export function NipPage({
         </button>
       </div>
 
-      <div className="author detail-author">
+      <ProfileLink
+        pubkey={nip.pubkey}
+        className="author detail-author"
+        title={authorLabel(nip.pubkey, profile?.name)}
+      >
         {profile?.picture ? (
           <img className="avatar" src={profile.picture} alt="" />
         ) : (
@@ -141,7 +173,16 @@ export function NipPage({
           </span>
           {profile?.nip05 && <span className="nip05">{profile.nip05}</span>}
         </div>
-      </div>
+      </ProfileLink>
+
+      <ApproverStack
+        approvers={approverPubkeys}
+        disapprovers={disapproverPubkeys}
+        profiles={verdictProfiles}
+        follows={follows}
+        webOfTrust={webOfTrust}
+        me={me}
+      />
 
       <h1 className="sheet-title">{nip.title}</h1>
       <div className="sheet-meta">
@@ -176,15 +217,39 @@ export function NipPage({
       <div className="nip-page-actions">
         <button
           className={`btn approve big${isApproved ? " done" : ""}`}
-          disabled={isApproved || pending.has(nip.address)}
-          onClick={() => void approve(nip)}
+          disabled={pending.has(nip.address)}
+          onClick={() => void (isApproved ? retract(nip) : approve(nip))}
+          title={
+            isApproved
+              ? "Click to retract your approval"
+              : "Publish a NIP-32 approval"
+          }
         >
-          {isApproved
-            ? "✓ Approved"
-            : pending.has(nip.address)
-              ? "Publishing…"
+          {pending.has(nip.address)
+            ? "Publishing…"
+            : isApproved
+              ? "✓ Approved"
               : "Approve"}
           <span className="count">{count}</span>
+        </button>
+        <button
+          className={`btn disapprove big${isDisapproved ? " done" : ""}`}
+          disabled={pending.has(nip.address)}
+          onClick={() => void (isDisapproved ? retract(nip) : disapprove(nip))}
+          title={
+            isDisapproved
+              ? "Click to retract your disapproval"
+              : "Publish a NIP-32 disapproval"
+          }
+        >
+          {pending.has(nip.address)
+            ? "Publishing…"
+            : isDisapproved
+              ? "✓ Disapproved"
+              : "Disapprove"}
+          {disapprovalCount > 0 && (
+            <span className="count">{disapprovalCount}</span>
+          )}
         </button>
         <button
           className="btn ghost"
@@ -194,12 +259,12 @@ export function NipPage({
         </button>
       </div>
 
-      <ApproverList
-        approvers={approverPubkeys}
-        profiles={approverProfiles}
-        follows={follows}
-        webOfTrust={webOfTrust}
-        me={me}
+      <FeedbackBar
+        nip={nip}
+        recipient={profile ?? undefined}
+        recipientName={authorLabel(nip.pubkey, profile?.name)}
+        loggedIn={!!me}
+        onNeedsAuth={onNeedsAuth}
       />
     </article>
   );

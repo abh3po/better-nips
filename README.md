@@ -1,7 +1,7 @@
-# NIP Commons
+# NIPs by Pollerama
 
-> Repo: `better-nips`. The app brands itself **NIP Commons** — a community
-> effort, not a company.
+> Repo: `better-nips`. The app brands itself **NIPs by Pollerama** — the NIPs
+> surface of the pollerama family of Nostr apps.
 
 A Nostr client for **community-authored NIPs** (NostrHub's `kind:30817` spec),
 surfaced by **following** and **web-of-trust**, with one-click **NIP-32 approvals**.
