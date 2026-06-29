@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Event, Filter } from "nostr-tools";
 import { dedupeKey } from "@formstr/local-relay";
-import { dataLayer } from "../nostr/bootstrap";
+import { dataLayer, onWarm } from "../nostr/bootstrap";
 
 interface ObserveState {
   events: Event[];
@@ -65,8 +65,15 @@ export function useObserve(
       },
       { localOnly },
     );
+    // If we subscribed during the worker's cold-start window (before its
+    // IndexedDB cache hydrated — a silent bulk load that doesn't fan out to
+    // open subs), re-issue the REQ once hydration lands so we pick up the
+    // cached corpus. `update` replays against the same sub, so events merge
+    // into our store without tearing down or flashing the feed empty.
+    const offWarm = onWarm(() => handle.update(parsed));
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      offWarm();
       handle.unobserve();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
