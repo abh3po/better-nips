@@ -36,6 +36,14 @@ export const RELAYS = [
 
 export const SEARCH_RELAYS = ["wss://relay.nostr.band"];
 
+/**
+ * Aggregator relay that mirrors NostrHub NIPs **and** their approvals. Always
+ * appended to the user's relay set (even a customized one) because author-less
+ * approval reads only reach `user relays ∪ gossip pool` — without a relay that
+ * holds everyone's approvals, global counts (e.g. arthurfranca's) never load.
+ */
+export const AGGREGATOR_RELAY = "wss://relay.ditto.pub";
+
 // No cap on the web-of-trust set: every direct follow and every discovered
 // 2nd-degree account is included. `local-relay`'s SyncEngine outbox-partitions
 // the author set across relays (each author → only the relays they write to),

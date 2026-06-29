@@ -103,6 +103,22 @@ function renderBlocks(src: string): ReactNode[] {
       continue;
     }
 
+    // Setext heading: a line of text underlined by `===` (h1) or `---` (h2).
+    // Without this, `Title\n=====` collapses into one paragraph ("Title ====")
+    // — a very common shape in NIP markdown.
+    const underline = lines[i + 1];
+    if (underline !== undefined && /^(=+|-+)\s*$/.test(underline)) {
+      const level = underline.trim().startsWith("=") ? 1 : 2;
+      const Tag = `h${Math.min(level + 1, 6)}` as keyof JSX.IntrinsicElements;
+      out.push(
+        <Tag className="md-h" key={k()}>
+          {renderInline(line)}
+        </Tag>,
+      );
+      i += 2; // consume the text line and its underline
+      continue;
+    }
+
     // Paragraph: gather until a blank line or a block starter.
     const para: string[] = [];
     while (

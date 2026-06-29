@@ -32,8 +32,19 @@ export function useObserve(
     setState({ events: [], eose: false });
     const parsed: Filter[] = JSON.parse(key);
 
-    const flush = (eose: boolean) =>
-      setState({ events: [...store.current.values()], eose });
+    // Coalesce the event stream: a `limit: 3000` query fires onEvent thousands
+    // of times on first load, and one setState per event is one render per
+    // event. Batch into a single flush per animation frame instead. EOSE
+    // flushes synchronously so `ready` flips without waiting for a frame.
+    let frame = 0;
+    let eosed = false;
+    const flush = () => {
+      frame = 0;
+      setState({ events: [...store.current.values()], eose: eosed });
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(flush);
+    };
 
     const handle = dataLayer.observe(
       parsed,
@@ -43,14 +54,21 @@ export function useObserve(
           const prev = store.current.get(k);
           if (!prev || e.created_at > prev.created_at) {
             store.current.set(k, e);
-            flush(false);
+            schedule();
           }
         },
-        onEose: () => flush(true),
+        onEose: () => {
+          eosed = true;
+          if (frame) cancelAnimationFrame(frame);
+          flush();
+        },
       },
       { localOnly },
     );
-    return () => handle.unobserve();
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      handle.unobserve();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, localOnly]);
 

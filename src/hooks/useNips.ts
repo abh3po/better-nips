@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Event, Filter } from "nostr-tools";
 import { useObserve } from "./useObserve";
 import { useGossip } from "./useGossip";
+import { useSettled } from "./useSettled";
 import { cacheFollows, getCachedFollows } from "../nostr/wotCache";
 import {
   KIND_APPROVAL,
@@ -147,50 +148,64 @@ export function useNipFeed(
 ): NipFeed {
   const followSet = useMemo(() => new Set(follows), [follows]);
 
-  // Approvals from your network — author-scoped so local-relay outbox-routes
-  // them to the approvers' relays (the only way to see approvals that live off
-  // your own relays). Doubles as the discovery source for approved NIPs.
-  const networkAuthors = useMemo(
-    () => [...new Set([...follows, ...webOfTrust])],
-    [follows, webOfTrust],
-  );
-  const networkApprovalFilters: Filter[] | null =
-    // networkAuthors.length > 0
-    //   ? 
-    [
-      {
-        kinds: [KIND_APPROVAL],
-        "#L": [LABEL_NAMESPACE],
-        // authors: networkAuthors,
-        limit: 3000,
-      },
-    ]
-  // : null;
-  const { events: networkApprovals } = useObserve(networkApprovalFilters);
+  // Every nostrhub approval, author-less and global — this is the count NostrHub
+  // shows (everyone's approvals, not just your network's) and the discovery
+  // source for approved-but-uncatalogued NIPs. Being author-less, it only
+  // reaches `user relays ∪ gossip pool`, so the aggregator relay (relay.ditto.pub,
+  // always in the user set) is what makes off-network approvals — e.g.
+  // arthurfranca's — actually load.
+  const globalApprovalFilters: Filter[] = [
+    { kinds: [KIND_APPROVAL], "#L": [LABEL_NAMESPACE], limit: 3000 },
+  ];
+  const { events: globalApprovals } = useObserve(globalApprovalFilters);
 
   // The global NIP catalog (small) + NIPs your network approved, fetched by the
   // authors/d-ids their approvals reference so old-but-approved NIPs still load.
   const approvedCoords = useMemo(() => {
     const authors = new Set<string>();
     const ds = new Set<string>();
-    for (const a of approvedAddresses(networkApprovals)) {
+    for (const a of approvedAddresses(globalApprovals)) {
       const [, pk, ...rest] = a.split(":");
       if (pk) authors.add(pk);
       const d = rest.join(":");
       if (d) ds.add(d);
     }
     return { authors: [...authors], ds: [...ds] };
-  }, [networkApprovals]);
+  }, [globalApprovals]);
 
-  const catalogFilters: Filter[] = [{ kinds: [KIND_NIP], limit: 500 }];
-  if (approvedCoords.authors.length > 0) {
-    catalogFilters.push({
-      kinds: [KIND_NIP],
-      authors: approvedCoords.authors,
-      "#d": approvedCoords.ds,
-    });
-  }
-  const { events: nipEvents, eose } = useObserve(catalogFilters);
+  // Base catalog — a stable filter, so it subscribes once and never thrashes.
+  // (When it was bundled with the discovery filter below, the streaming
+  // approval firehose kept changing the combined key, tearing the catalog down
+  // and flipping `ready` back to false on every frame — the re-render storm.)
+  const baseCatalogFilters = useMemo<Filter[]>(
+    () => [{ kinds: [KIND_NIP], limit: 500 }],
+    [],
+  );
+  const { events: catalogEvents, eose } = useObserve(baseCatalogFilters);
+
+  // NIPs your network approved that aren't in the base catalog, fetched by the
+  // authors/d-ids their approvals reference. Settled so the approval stream
+  // doesn't re-subscribe this every frame.
+  const discoveryCoords = useSettled(approvedCoords, 500);
+  const discoveryFilters = useMemo<Filter[] | null>(
+    () =>
+      discoveryCoords.authors.length > 0
+        ? [
+            {
+              kinds: [KIND_NIP],
+              authors: discoveryCoords.authors,
+              "#d": discoveryCoords.ds,
+            },
+          ]
+        : null,
+    [discoveryCoords],
+  );
+  const { events: discoveredEvents } = useObserve(discoveryFilters);
+
+  const nipEvents = useMemo(
+    () => [...catalogEvents, ...discoveredEvents],
+    [catalogEvents, discoveredEvents],
+  );
 
   // De-dupe addressable NIPs to the latest version per coordinate.
   const parsed = useMemo(() => {
@@ -207,22 +222,25 @@ export function useNipFeed(
 
   // Teach the worker where the NIP authors publish (their NIP-65 → gossip pool),
   // so author-less catalog/approval reads reach relays beyond your own — this is
-  // what surfaces NIPs like NIP-01 that live on the author's relays.
-  const nipAuthors = useMemo(
-    () => [...new Set(parsed.map((n) => n.pubkey))],
-    [parsed],
+  // what surfaces NIPs like NIP-01 that live on the author's relays. Settled so
+  // the gossip subscription doesn't churn as the catalog fills in.
+  const nipAuthors = useSettled(
+    useMemo(() => [...new Set(parsed.map((n) => n.pubkey))], [parsed]),
+    500,
   );
   useGossip(nipAuthors);
 
   // Address-scoped global approvals for the visible NIPs — the total count
-  // (everyone, not just your network), merged with the network approvals above.
+  // (everyone, not just your network), merged with the global approvals above.
+  // Settled so the firehose doesn't re-subscribe this on every catalog batch.
+  const addrTargets = useSettled(addresses, 500);
   const addrApprovalFilters: Filter[] | null =
-    addresses.length > 0
+    addrTargets.length > 0
       ? [
         {
           kinds: [KIND_APPROVAL],
           "#L": [LABEL_NAMESPACE],
-          "#a": addresses,
+          "#a": addrTargets,
           limit: 3000,
         },
       ]
@@ -232,7 +250,7 @@ export function useNipFeed(
   const nips = useMemo(() => {
     // address -> all approver pubkeys (merged from both approval queries).
     const byAddress = new Map<string, Set<string>>();
-    for (const e of [...networkApprovals, ...addrApprovals]) {
+    for (const e of [...globalApprovals, ...addrApprovals]) {
       if (!e.tags.some((t) => t[0] === "l" && t[1] === LABEL_APPROVE)) continue;
       const addr = approvalTarget(e);
       if (!addr) continue;
@@ -265,7 +283,7 @@ export function useNipFeed(
 
     scored.sort((a, b) => b.score - a.score || b.createdAt - a.createdAt);
     return scored;
-  }, [parsed, networkApprovals, addrApprovals, surface, followSet, webOfTrust]);
+  }, [parsed, globalApprovals, addrApprovals, surface, followSet, webOfTrust]);
 
   const authors = useMemo(
     () => [...new Set(nips.map((n) => n.pubkey))],

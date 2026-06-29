@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import type { Filter } from "nostr-tools";
 import { useObserve } from "./useObserve";
 import { dataLayer } from "../nostr/bootstrap";
-import { KIND_RELAY_LIST } from "../nostr/constants";
+import { AGGREGATOR_RELAY, KIND_RELAY_LIST } from "../nostr/constants";
 import { parseRelayList, relayUrls, type RelayEntry } from "../nostr/nip65";
 import { loadRelays } from "../nostr/relays";
 
@@ -40,7 +40,11 @@ export function useUserRelays(pubkey: string | null): UserRelays {
   const key = resolved.relays.join(",");
   useEffect(() => {
     if (resolved.relays.length > 0) {
-      dataLayer.setUserRelays([...resolved.relays, "relay.ditto.pub"]);
+      // Keep the aggregator in the set so global approval counts survive the
+      // switch to the user's own NIP-65 relays.
+      dataLayer.setUserRelays([
+        ...new Set([...resolved.relays, AGGREGATOR_RELAY]),
+      ]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

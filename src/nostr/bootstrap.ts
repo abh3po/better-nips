@@ -7,7 +7,7 @@ import {
 import { createSigner } from "@formstr/signer";
 import { SimplePool } from "nostr-tools/pool";
 import type { EventTemplate, Event } from "nostr-tools";
-import { APP_NAME, APP_URL, SEARCH_RELAYS } from "./constants";
+import { AGGREGATOR_RELAY, APP_NAME, APP_URL, SEARCH_RELAYS } from "./constants";
 import { loadRelays } from "./relays";
 
 // One signer for the whole app. Handles NIP-07 / NIP-46 / NIP-49 / NIP-55 and
@@ -22,8 +22,9 @@ export const signer = createSigner({
 // bunker session is re-attached without re-prompting the user.
 export const pool = new SimplePool();
 
-// The user's effective relay list (persisted override or defaults).
-const userRelays = loadRelays();
+// The user's effective relay list (persisted override or defaults), always
+// including the aggregator relay so global approval counts can resolve.
+const userRelays = [...new Set([...loadRelays(), AGGREGATOR_RELAY])];
 
 // Spawn the ready-made local-relay worker. It owns every connection decision;
 // the app only declares interests (observe) and publishes.
@@ -33,7 +34,7 @@ const worker = new Worker(
 );
 
 const client = new LocalRelayClient(workerChannel(worker));
-client.setUserRelays([...userRelays, "relay.ditto.pub"]);
+client.setUserRelays(userRelays);
 
 // The data layer signs through whichever account is currently unlocked. The
 // callback resolves the active signer lazily, so publishing before login throws
@@ -47,7 +48,7 @@ export const dataLayer = new DataLayer({
   },
 });
 
-dataLayer.setUserRelays([...userRelays, "relay.ditto.pub"]);
+dataLayer.setUserRelays(userRelays);
 dataLayer.setSearchRelays(SEARCH_RELAYS);
 
 // Install the process-wide singleton (lets `getDataLayer()` work anywhere).
